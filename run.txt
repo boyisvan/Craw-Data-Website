@@ -1,0 +1,5 @@
+Cài thư viện
+    - npm install
+
+Chạy code :
+    - npm start

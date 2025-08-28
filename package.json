@@ -1,0 +1,28 @@
+{
+  "name": "torunstyle-crawler",
+  "version": "1.0.0",
+  "description": "Crawler để thu thập dữ liệu sản phẩm từ torunstyle.com",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "chalk": "^4.1.2",
+    "csv-writer": "^1.6.0",
+    "fs-extra": "^11.1.1",
+    "inquirer": "^8.2.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": [
+    "crawler",
+    "scraper",
+    "ecommerce",
+    "csv"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
