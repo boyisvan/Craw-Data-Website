@@ -10,8 +10,10 @@ if (typeof inquirer.prompt !== 'function') {
 const chalk = require('chalk');
 const ProductCrawler = require('./productCrawler');
 const BookmarkManager = require('./bookmarkManager');
+const KeywordBookmarkManager = require('./keywordBookmarkManager');
 const CsvExporter = require('./csvExporter');
 const CrawlStateManager = require('./crawlStateManager');
+const KeywordHistory = require('./keywordHistory');
 const config = require('./config');
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
@@ -20,12 +22,15 @@ class TorunstyleCrawlerApp {
   constructor() {
     this.crawler = new ProductCrawler();
     this.bookmarkManager = new BookmarkManager();
+    this.keywordBookmarkManager = new KeywordBookmarkManager();
     this.csvExporter = new CsvExporter();
     this.crawlState = new CrawlStateManager();
+    this.keywordHistory = new KeywordHistory();
     this.collectedProducts = [];
     this.lastActionSummary = null;
     this.skipClearOnce = false;
     this.currentSite = null;
+    this.currentKeyword = null;
   }
 
   // Sleep utility
@@ -269,23 +274,26 @@ class TorunstyleCrawlerApp {
         console.log(chalk.red('Khong the ket noi API voi site moi. Vui long kiem tra URL.'));
         return await this.selectSite();
       }
-      this.currentSite = customSite;
-      this.bookmarkManager.setSite(this.currentSite.key);
-      this.crawlState.setSite(this.currentSite.key);
+             this.currentSite = customSite;
+       this.bookmarkManager.setSite(this.currentSite.key);
+       this.keywordBookmarkManager.setSite(this.currentSite.key);
+       this.crawlState.setSite(this.currentSite.key);
       return;
     }
-    this.currentSite = config.sites.find(s => s.key === selected) || null;
-    if (this.currentSite) {
-      this.crawler.setBaseUrl(this.currentSite.baseUrl);
-      this.bookmarkManager.setSite(this.currentSite.key);
-      this.crawlState.setSite(this.currentSite.key);
-    }
+         this.currentSite = config.sites.find(s => s.key === selected) || null;
+     if (this.currentSite) {
+       this.crawler.setBaseUrl(this.currentSite.baseUrl);
+       this.bookmarkManager.setSite(this.currentSite.key);
+       this.keywordBookmarkManager.setSite(this.currentSite.key);
+       this.crawlState.setSite(this.currentSite.key);
+     }
   }
 
   // Menu chinh
   async showMainMenu() {
     const choices = [
       { name: 'Bat dau thu thap du lieu', value: 'crawl' },
+      { name: 'Tim kiem theo tu khoa', value: 'keyword_search' },
       { name: 'Xem thong ke bookmark', value: 'stats' },
       { name: 'Kiem tra ket noi API', value: 'test' },
       { name: 'Kiem tra tat ca website', value: 'check_all_sites' },
@@ -306,6 +314,69 @@ class TorunstyleCrawlerApp {
     ]);
 
     return action;
+  }
+
+  // Menu tim kiem theo tu khoa
+  async showKeywordSearchMenu() {
+    const choices = [
+      { name: 'Thu thap du lieu theo tu khoa', value: 'crawl_filtered' },
+      { name: 'Xem lich su tu khoa', value: 'keyword_history' },
+      { name: 'Xoa lich su tu khoa', value: 'clear_keyword_history' },
+      { name: 'Xuat du lieu theo tu khoa ra CSV', value: 'export_keyword' },
+      { name: 'Xem thong ke bookmark tu khoa', value: 'keyword_stats' },
+      { name: 'Xem danh sach bookmark tu khoa', value: 'keyword_list' },
+      { name: 'Xoa bookmark tu khoa', value: 'clear_keyword_bookmarks' },
+      { name: 'Quay lai menu chinh', value: 'back' }
+    ];
+
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: 'Chon hanh dong tim kiem theo tu khoa:',
+        choices: choices
+      }
+    ]);
+
+    return action;
+  }
+
+  // Xu ly menu tim kiem theo tu khoa
+  async handleKeywordSearchMenu() {
+    while (true) {
+      const action = await this.showKeywordSearchMenu();
+      
+      switch (action) {
+        case 'crawl_filtered':
+          await this.crawlFilteredData();
+          break;
+        case 'keyword_history':
+          this.showKeywordHistory();
+          break;
+        case 'clear_keyword_history':
+          await this.clearKeywordHistory();
+          break;
+        case 'export_keyword':
+          await this.exportKeywordToCsv();
+          break;
+        case 'keyword_stats':
+          this.showKeywordStats();
+          break;
+        case 'keyword_list':
+          await this.showKeywordBookmarkList();
+          break;
+        case 'clear_keyword_bookmarks':
+          await this.clearKeywordBookmarks();
+          break;
+        case 'back':
+          return; // Quay lai menu chinh
+      }
+      
+      // Neu khong phai quay lai thi hien thi man hinh tiep tuc
+      if (action !== 'back') {
+        await this.renderContinueScreen();
+      }
+    }
   }
 
   // Hien thi separator
@@ -402,6 +473,120 @@ class TorunstyleCrawlerApp {
     return await inquirer.prompt(questions);
   }
 
+  // Cau hình thu thap du lieu theo tu khoa
+  async getFilteredCrawlConfig() {
+    // Hien thi lich su tu khoa neu co
+    const siteHistory = this.keywordHistory.getHistoryBySite(this.currentSite?.key);
+    const popularKeywords = this.keywordHistory.getPopularKeywords(this.currentSite?.key);
+    
+    if (siteHistory.length > 0) {
+      console.log(chalk.blue('Lich su tu khoa gan day:'));
+      siteHistory.slice(0, 5).forEach((item, index) => {
+        console.log(chalk.gray(`   ${index + 1}. "${item.keyword}" (${item.resultCount} san pham) - ${item.date}`));
+      });
+      console.log('');
+    }
+
+    if (popularKeywords.length > 0) {
+      console.log(chalk.blue('🔥 Tu khoa pho bien:'));
+      popularKeywords.slice(0, 5).forEach((item, index) => {
+        console.log(chalk.gray(`   ${index + 1}. "${item.keyword}" (${item.count} lan su dung)`));
+      });
+      console.log('');
+    }
+
+    // Tao danh sach lua chon tu khoa
+    const keywordChoices = [];
+    
+    if (siteHistory.length > 0) {
+      keywordChoices.push(new inquirer.Separator('Tu khoa gan day:'));
+      siteHistory.slice(0, 5).forEach((item, index) => {
+        keywordChoices.push({
+          name: `"${item.keyword}" (${item.resultCount} san pham) - ${item.date}`,
+          value: item.keyword
+        });
+      });
+    }
+    
+    if (popularKeywords.length > 0) {
+      keywordChoices.push(new inquirer.Separator('Tu khoa pho bien:'));
+      popularKeywords.slice(0, 3).forEach((item, index) => {
+        keywordChoices.push({
+          name: `"${item.keyword}" (${item.count} lan su dung)`,
+          value: item.keyword
+        });
+      });
+    }
+    
+    keywordChoices.push(new inquirer.Separator('Nhap tu khoa moi:'));
+    keywordChoices.push({
+      name: 'Nhap tu khoa moi...',
+      value: '__new__'
+    });
+
+    const questions = [
+      {
+        type: 'list',
+        name: 'keywordChoice',
+        message: 'Chon tu khoa hoac nhap tu khoa moi:',
+        choices: keywordChoices
+      },
+      {
+        type: 'input',
+        name: 'keyword',
+        message: 'Nhap tu khoa can thu thap:',
+        when: (answers) => answers.keywordChoice === '__new__',
+        validate: (value) => {
+          return value && value.trim().length > 0 ? true : 'Vui long nhap tu khoa';
+        }
+      },
+      {
+        type: 'input',
+        name: 'maxPages',
+        message: 'So trang toi da can thu thap:',
+        default: config.defaultConfig.maxPages.toString(),
+        validate: (value) => {
+          const num = parseInt(value);
+          return num > 0 && num <= 100 ? true : 'Vui long nhap so tu 1-100';
+        }
+      },
+      {
+        type: 'input',
+        name: 'perPage',
+        message: 'So san pham moi trang:',
+        default: config.defaultConfig.perPage.toString(),
+        validate: (value) => {
+          const num = parseInt(value);
+          return num > 0 && num <= 100 ? true : 'Vui long nhap so tu 1-100';
+        }
+      },
+      {
+        type: 'list',
+        name: 'orderBy',
+        message: 'Sap xep theo:',
+        choices: [
+          { name: 'Ngay tao (moi nhat)', value: 'date' },
+          { name: 'Ten san pham', value: 'title' },
+          { name: 'Gia', value: 'price' },
+          { name: 'ID', value: 'id' }
+        ],
+        default: 'date'
+      },
+      {
+        type: 'list',
+        name: 'order',
+        message: 'Thu tu sap xep:',
+        choices: [
+          { name: 'Giam dan (moi nhat)', value: 'desc' },
+          { name: 'Tăng dan (cũ nhat)', value: 'asc' }
+        ],
+        default: 'desc'
+      }
+    ];
+
+    return await inquirer.prompt(questions);
+  }
+
   // Thu thap du lieu
   async crawlData() {
     try {
@@ -414,6 +599,7 @@ class TorunstyleCrawlerApp {
       }
 
       const config = await this.getCrawlConfig();
+      this.currentKeyword = null; // Reset tu khoa hien tai
       console.log(chalk.green('Ket noi thanh cong! Bat dau thu thap du lieu...'));
       
       this.collectedProducts = await this.crawler.crawlProductsWithRetry(
@@ -465,6 +651,195 @@ class TorunstyleCrawlerApp {
         lines: [chalk.red(`Loi: ${error.message}`)]
       };
     }
+  }
+
+  // Thu thap du lieu theo tu khoa
+  async crawlFilteredData() {
+    try {
+      console.log(chalk.yellow('Dang kiem tra ket noi API...'));
+      const isConnected = await this.crawler.testConnection();
+      
+      if (!isConnected) {
+        console.log(chalk.red('Khong the ket noi API. Vui long kiem tra lai.'));
+        return;
+      }
+
+      const config = await this.getFilteredCrawlConfig();
+      
+      // Xử lý tu khoa duoc chon
+      const keyword = config.keywordChoice === '__new__' ? config.keyword : config.keywordChoice;
+      this.currentKeyword = keyword; // Luu tu khoa hien tai
+      
+      console.log(chalk.green('Ket noi thanh cong! Bat dau thu thap du lieu theo tu khoa...'));
+      console.log(chalk.blue(`🔍 Tu khoa: "${keyword}"`));
+      
+      // Thu thap du lieu va loc theo tu khoa
+      const allProducts = await this.crawler.crawlProductsWithRetry(
+        parseInt(config.maxPages),
+        parseInt(config.perPage),
+        config.orderBy,
+        config.order
+      );
+
+      // Loc san pham theo tu khoa
+      const keywordLower = keyword.toLowerCase();
+      this.collectedProducts = allProducts.filter(product => {
+        const name = (product.name || '').toLowerCase();
+        const description = (product.description || '').toLowerCase();
+        const shortDescription = (product.short_description || '').toLowerCase();
+        const categories = Array.isArray(product.categories) 
+          ? product.categories.map(cat => (cat.name || '').toLowerCase()).join(' ')
+          : '';
+        const tags = Array.isArray(product.tags)
+          ? product.tags.map(tag => (tag.name || '').toLowerCase()).join(' ')
+          : '';
+        
+        return name.includes(keywordLower) || 
+               description.includes(keywordLower) || 
+               shortDescription.includes(keywordLower) ||
+               categories.includes(keywordLower) ||
+               tags.includes(keywordLower);
+      });
+
+      console.log(chalk.blue(`Tong so san pham thu thap: ${allProducts.length}`));
+      console.log(chalk.blue(`San pham phu hop tu khoa: ${this.collectedProducts.length}`));
+
+              // Hien thi thong tin chi tiet ve viec loc
+        if (this.collectedProducts.length > 0) {
+          this.showFilteredResultsInfo(allProducts, this.collectedProducts, keywordLower);
+        }
+
+      if (this.collectedProducts.length > 0) {
+        console.log(chalk.green(`🎉 Thu thap thanh cong ${this.collectedProducts.length} san pham phu hop!`));
+        
+        // Luu tu khoa vao lich su
+        this.keywordHistory.addKeyword(keyword, this.currentSite?.key, this.collectedProducts.length);
+        
+        // Kiem tra duplicate va xử lý bookmark cho từ khóa
+        const dupStats = await this.processKeywordDuplicates();
+        this.lastActionSummary = {
+          title: 'Tom tat lan thu thap theo tu khoa',
+          lines: [
+            chalk.blue(`🔍 Tu khoa: "${keyword}"`),
+            chalk.green(`🎉 Thu thap: ${this.collectedProducts.length} san pham phu hop`),
+            chalk.white(`Moi: ${dupStats.newBookmarkCount}`),
+            chalk.yellow(`Trung lap: ${dupStats.duplicateCount}`),
+            chalk.white(`Tong bookmark: ${dupStats.totalBookmarks}`)
+          ]
+        };
+      } else {
+        console.log(chalk.yellow(`⚠️ Khong tim thay san pham nao phu hop voi tu khoa "${keyword}"`));
+        this.lastActionSummary = {
+          title: 'Thu thap du lieu theo tu khoa',
+          lines: [
+            chalk.blue(`Tu khoa: "${keyword}"`),
+            chalk.yellow('⚠️ Khong tim thay san pham phu hop')
+          ]
+        };
+      }
+    } catch (error) {
+      console.error(chalk.red('Loi khi thu thap du lieu theo tu khoa:'), error.message);
+      this.lastActionSummary = {
+        title: 'Thu thap du lieu theo tu khoa',
+        lines: [chalk.red(`Loi: ${error.message}`)]
+      };
+    }
+  }
+
+  // Hien thi lich su tu khoa
+  showKeywordHistory() {
+    const allHistory = this.keywordHistory.getAllHistory();
+    const siteHistory = this.keywordHistory.getHistoryBySite(this.currentSite?.key);
+    const popularKeywords = this.keywordHistory.getPopularKeywords(this.currentSite?.key);
+
+    console.log(chalk.blue('LICH SU TU KHOA'));
+    console.log(chalk.blue('═══════════════════════'));
+    
+    if (allHistory.length === 0) {
+      console.log(chalk.yellow('📭 Chua co lich su tu khoa nao.'));
+      this.lastActionSummary = { title: 'Lich su tu khoa', lines: [chalk.yellow('📭 Chua co lich su')] };
+      return;
+    }
+
+    console.log(chalk.white(`Tong so tu khoa da su dung: ${allHistory.length}`));
+    console.log(chalk.white(`Tu khoa cho site hien tai: ${siteHistory.length}`));
+    console.log('');
+
+    if (siteHistory.length > 0) {
+      console.log(chalk.blue(`Lich su tu khoa cho ${this.currentSite?.name || 'site hien tai'}:`));
+      this.showSeparator();
+      
+      siteHistory.slice(0, 10).forEach((item, index) => {
+        const date = new Date(item.timestamp).toLocaleDateString('vi-VN');
+        const time = new Date(item.timestamp).toLocaleTimeString('vi-VN');
+        console.log(chalk.white(`${index + 1}. "${item.keyword}" - ${item.resultCount} san pham (${date} ${time})`));
+      });
+      
+      if (siteHistory.length > 10) {
+        console.log(chalk.gray(`   ... va ${siteHistory.length - 10} tu khoa khac`));
+      }
+      console.log('');
+    }
+
+    if (popularKeywords.length > 0) {
+      console.log(chalk.blue('Tu khoa pho bien:'));
+      this.showSeparator();
+      
+      popularKeywords.forEach((item, index) => {
+        console.log(chalk.white(`${index + 1}. "${item.keyword}" - ${item.count} lan su dung`));
+      });
+      console.log('');
+    }
+
+    this.lastActionSummary = {
+      title: 'Lich su tu khoa',
+      lines: [
+        chalk.white(`Tong: ${allHistory.length}`),
+        chalk.white(`Site hien tai: ${siteHistory.length}`),
+        chalk.white(`Pho bien: ${popularKeywords.length > 0 ? popularKeywords[0].keyword : 'Khong co'}`)
+      ]
+    };
+  }
+
+  // Hien thi thong tin chi tiet ve ket qua loc
+  showFilteredResultsInfo(allProducts, filteredProducts, keyword) {
+    console.log(chalk.blue('Chi tiet ket qua loc:'));
+    this.showSeparator();
+    
+    // Thong ke theo loai
+    const nameMatches = filteredProducts.filter(p => (p.name || '').toLowerCase().includes(keyword)).length;
+    const descMatches = filteredProducts.filter(p => (p.description || '').toLowerCase().includes(keyword)).length;
+    const shortDescMatches = filteredProducts.filter(p => (p.short_description || '').toLowerCase().includes(keyword)).length;
+    const categoryMatches = filteredProducts.filter(p => {
+      const categories = Array.isArray(p.categories) 
+        ? p.categories.map(cat => (cat.name || '').toLowerCase()).join(' ')
+        : '';
+      return categories.includes(keyword);
+    }).length;
+    const tagMatches = filteredProducts.filter(p => {
+      const tags = Array.isArray(p.tags)
+        ? p.tags.map(tag => (tag.name || '').toLowerCase()).join(' ')
+        : '';
+      return tags.includes(keyword);
+    }).length;
+
+    console.log(chalk.white(`   • Tim thay trong ten san pham: ${nameMatches}`));
+    console.log(chalk.white(`   • Tim thay trong mo ta: ${descMatches}`));
+    console.log(chalk.white(`   • Tim thay trong mo ta ngan: ${shortDescMatches}`));
+    console.log(chalk.white(`   • Tim thay trong danh muc: ${categoryMatches}`));
+    console.log(chalk.white(`   • Tim thay trong tag: ${tagMatches}`));
+    
+    // Hien thi 5 san pham dau tien
+    if (filteredProducts.length > 0) {
+      console.log(chalk.blue('\n 5 san pham dau tien phu hop:'));
+      filteredProducts.slice(0, 5).forEach((product, index) => {
+        const name = product.name || 'Khong co ten';
+        const price = product.prices?.regular_price || 'Khong co gia';
+        console.log(chalk.white(`   ${index + 1}. ${name} - ${price}`));
+      });
+    }
+    
+    this.showSeparator();
   }
 
   // Xử lý duplicate va bookmark
@@ -564,6 +939,39 @@ class TorunstyleCrawlerApp {
     };
   }
 
+  // Xử lý duplicate va bookmark cho từ khóa
+  async processKeywordDuplicates() {
+    if (!this.currentKeyword) {
+      console.log(chalk.red('Khong co tu khoa hien tai de xu ly bookmark.'));
+      return { newBookmarkCount: 0, duplicateCount: 0, totalBookmarks: 0 };
+    }
+
+    let duplicateCount = 0;
+    let newBookmarkCount = 0;
+
+    for (const product of this.collectedProducts) {
+      if (this.keywordBookmarkManager.isDuplicate(product, this.currentKeyword)) {
+        duplicateCount++;
+        this.keywordBookmarkManager.markAsDuplicate(product, this.currentKeyword);
+      } else {
+        // San pham khong phai duplicate
+        newBookmarkCount++;
+        this.keywordBookmarkManager.addBookmark(product, this.currentKeyword);
+      }
+    }
+
+    console.log(chalk.blue(`Thong ke tu khoa "${this.currentKeyword}":`));
+    console.log(chalk.blue(`   - San pham moi: ${newBookmarkCount}`));
+    console.log(chalk.blue(`   - San pham trung lap: ${duplicateCount}`));
+    console.log(chalk.blue(`   - Tong bookmark tu khoa: ${this.keywordBookmarkManager.getBookmarkCountByKeyword(this.currentKeyword)}`));
+
+    return {
+      newBookmarkCount,
+      duplicateCount,
+      totalBookmarks: this.keywordBookmarkManager.getBookmarkCountByKeyword(this.currentKeyword)
+    };
+  }
+
   // Xuat du lieu ra CSV
   async exportToCsv() {
     try {
@@ -629,6 +1037,62 @@ class TorunstyleCrawlerApp {
     }
   }
 
+  // Xuat du lieu theo tu khoa ra CSV
+  async exportKeywordToCsv() {
+    try {
+      if (this.collectedProducts.length === 0) {
+        console.log(chalk.yellow('⚠️ Khong co du lieu de xuat.'));
+        return;
+      }
+
+      if (!this.currentKeyword) {
+        console.log(chalk.yellow('⚠️ Khong co tu khoa nao duoc chon. Vui long thu thap du lieu theo tu khoa truoc.'));
+        return;
+      }
+
+      // Chon nơi luu file: thử mở SaveFile dialog (Windows). Neu huy, fallback hoi input.
+      let customPath = await this.showWindowsSaveFileDialog(`products_${this.currentKeyword.replace(/[^a-zA-Z0-9]/g, '_')}.csv`);
+      if (!customPath) {
+        const ask = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'customPath',
+            message: `Nhap duong dan luu file CSV (Enter de dung mac dinh: products_${this.currentKeyword.replace(/[^a-zA-Z0-9]/g, '_')}.csv):`,
+            default: `products_${this.currentKeyword.replace(/[^a-zA-Z0-9]/g, '_')}.csv`,
+          }
+        ]);
+        customPath = ask.customPath;
+      }
+
+      const success = await this.csvExporter.exportToCsvWithKeyword(this.collectedProducts, this.keywordBookmarkManager, this.currentKeyword, customPath || undefined);
+
+      if (success) {
+        const finalPath = customPath || `products_${this.currentKeyword.replace(/[^a-zA-Z0-9]/g, '_')}.csv`;
+        console.log(chalk.green(`Xuat CSV theo tu khoa thanh cong! File: ${finalPath}`));
+        // Mở thu muc chua file tren Windows
+        try {
+          const folder = path.dirname(finalPath);
+          if (process.platform === 'win32') {
+            spawn('explorer', [folder], { detached: true, stdio: 'ignore' }).unref();
+          }
+        } catch (_) {}
+        this.lastActionSummary = {
+          title: 'Xuat CSV theo tu khoa',
+          lines: [
+            chalk.blue(`🔍 Tu khoa: "${this.currentKeyword}"`),
+            chalk.green(`Da xuat file: ${finalPath}`)
+          ]
+        };
+      }
+    } catch (error) {
+      console.error(chalk.red('Loi khi xuat CSV theo tu khoa:'), error.message);
+      this.lastActionSummary = {
+        title: 'Xuat CSV theo tu khoa',
+        lines: [chalk.red(`Loi: ${error.message}`)]
+      };
+    }
+  }
+
   // Hien thi thong ke
   showStats() {
     const bookmarks = this.bookmarkManager.getBookmarks();
@@ -644,7 +1108,7 @@ class TorunstyleCrawlerApp {
     
     if (totalBookmarks > 0) {
       const duplicateRate = ((duplicates / totalBookmarks) * 100).toFixed(2);
-      console.log(chalk.blue(`📈 Ty le trung lap: ${duplicateRate}%`));
+      console.log(chalk.blue(`Ty le trung lap: ${duplicateRate}%`));
     }
     this.lastActionSummary = {
       title: 'Thong ke bookmark',
@@ -698,6 +1162,135 @@ class TorunstyleCrawlerApp {
     }
   }
 
+  // Xoa lich su tu khoa
+  async clearKeywordHistory() {
+    const { confirm } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'confirm',
+        message: chalk.red('⚠️ Ban co chac chan muon xoa TaT Ca lich su tu khoa khong?'),
+        default: false
+      }
+    ]);
+
+    if (confirm) {
+      this.keywordHistory.clearHistory();
+      console.log(chalk.green('Da xoa tat ca lich su tu khoa!'));
+      this.lastActionSummary = { title: 'Xoa lich su tu khoa', lines: [chalk.green('Da xoa tat ca')] };
+    } else {
+      console.log(chalk.yellow('❌ Huy xoa lich su tu khoa.'));
+      this.lastActionSummary = { title: 'Xoa lich su tu khoa', lines: [chalk.yellow('❌ da huy')] };
+    }
+  }
+
+  // Hien thi thong ke bookmark tu khoa
+  showKeywordStats() {
+    const stats = this.keywordBookmarkManager.getKeywordStats();
+    const keywords = this.keywordBookmarkManager.getKeywords();
+
+    console.log(chalk.blue('THONG KE BOOKMARK TU KHOA'));
+    console.log(chalk.blue('═══════════════════════════'));
+    
+    if (keywords.length === 0) {
+      console.log(chalk.yellow('📭 Chua co bookmark tu khoa nao.'));
+      this.lastActionSummary = { title: 'Thong ke bookmark tu khoa', lines: [chalk.yellow('📭 Chua co bookmark')] };
+      return;
+    }
+
+    console.log(chalk.white(`Tong so tu khoa co bookmark: ${keywords.length}`));
+    console.log(chalk.white(`Tong so bookmark: ${this.keywordBookmarkManager.getBookmarkCount()}`));
+    console.log('');
+
+    keywords.forEach(keyword => {
+      const keywordStats = stats[keyword];
+      console.log(chalk.blue(`Tu khoa: "${keyword}"`));
+      console.log(chalk.white(`   - Tong bookmark: ${keywordStats.total}`));
+      console.log(chalk.green(`   - Bookmark moi: ${keywordStats.new}`));
+      console.log(chalk.yellow(`   - Bookmark trung lap: ${keywordStats.duplicates}`));
+      
+      if (keywordStats.total > 0) {
+        const duplicateRate = ((keywordStats.duplicates / keywordStats.total) * 100).toFixed(2);
+        console.log(chalk.blue(`   - Ty le trung lap: ${duplicateRate}%`));
+      }
+      console.log('');
+    });
+
+    this.lastActionSummary = {
+      title: 'Thong ke bookmark tu khoa',
+      lines: [
+        chalk.white(`Tong tu khoa: ${keywords.length}`),
+        chalk.white(`Tong bookmark: ${this.keywordBookmarkManager.getBookmarkCount()}`)
+      ]
+    };
+  }
+
+  // Hien thi danh sach bookmark tu khoa
+  async showKeywordBookmarkList() {
+    const keywords = this.keywordBookmarkManager.getKeywords();
+    
+    if (keywords.length === 0) {
+      console.log(chalk.yellow('📭 Khong co bookmark tu khoa nao.'));
+      this.lastActionSummary = { title: 'Danh sach bookmark tu khoa', lines: [chalk.yellow('📭 Khong co bookmark')] };
+      return;
+    }
+
+    // Chọn từ khóa để xem bookmark
+    const { selectedKeyword } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'selectedKeyword',
+        message: 'Chon tu khoa de xem bookmark:',
+        choices: keywords
+      }
+    ]);
+
+    const bookmarks = this.keywordBookmarkManager.getBookmarksByKeyword(selectedKeyword);
+    
+    console.log(chalk.blue(`BOOKMARK TU KHOA "${selectedKeyword}" (${bookmarks.length})`));
+    this.showSeparator();
+    
+    bookmarks.forEach((bookmark, index) => {
+      const status = bookmark.isDuplicate ? chalk.yellow('(Trung lap)') : chalk.green('(Moi)');
+      console.log(chalk.white(`${index + 1}. ${bookmark.permalink} ${status}`));
+    });
+    
+    this.showSeparator();
+    this.lastActionSummary = { 
+      title: 'Danh sach bookmark tu khoa', 
+      lines: [chalk.white(`Tu khoa: "${selectedKeyword}" - ${bookmarks.length} bookmark`)] 
+    };
+    this.skipClearOnce = true;
+  }
+
+  // Xoa bookmark tu khoa
+  async clearKeywordBookmarks() {
+    const keywords = this.keywordBookmarkManager.getKeywords();
+    
+    if (keywords.length === 0) {
+      console.log(chalk.yellow('📭 Khong co bookmark tu khoa nao de xoa.'));
+      this.lastActionSummary = { title: 'Xoa bookmark tu khoa', lines: [chalk.yellow('📭 Khong co bookmark')] };
+      return;
+    }
+
+    const { confirm } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'confirm',
+        message: chalk.red('⚠️ Ban co chac chan muon xoa TaT Ca bookmark tu khoa khong?'),
+        default: false
+      }
+    ]);
+
+    if (confirm) {
+      this.keywordBookmarkManager.clearBookmarks();
+      console.log(chalk.green('Da xoa tat ca bookmark tu khoa!'));
+      this.lastActionSummary = { title: 'Xoa bookmark tu khoa', lines: [chalk.green('Da xoa tat ca')] };
+    } else {
+      console.log(chalk.yellow('❌ Huy xoa bookmark tu khoa.'));
+      this.lastActionSummary = { title: 'Xoa bookmark tu khoa', lines: [chalk.yellow('❌ da huy')] };
+    }
+  }
+
   // Chay ung dung
   async run() {
     await this.showIntroBanner();
@@ -711,6 +1304,9 @@ class TorunstyleCrawlerApp {
         switch (action) {
           case 'crawl':
             await this.crawlData();
+            break;
+          case 'keyword_search':
+            await this.handleKeywordSearchMenu();
             break;
           case 'stats':
             this.showStats();

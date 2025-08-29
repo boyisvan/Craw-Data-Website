@@ -176,6 +176,78 @@ class CsvExporter {
       return false;
     }
   }
+
+  // Xuat dữ lieu ra CSV với thong tin tu khoa
+  async exportToCsvWithKeyword(products, bookmarkManager, keyword, outputFilePath) {
+    try {
+      // Tao header moi voi thong tin tu khoa
+      const keywordHeader = [
+        ...this.header,
+        { id: 'search_keyword', title: 'Tu khoa tim kiem' },
+        { id: 'keyword_match_type', title: 'Loai khop tu khoa' }
+      ];
+
+      const csvData = products.map(product => {
+        // Kiểm tra xem bookmarkManager có phải là keywordBookmarkManager không
+        const isDuplicate = bookmarkManager.isDuplicate && bookmarkManager.isDuplicate.length === 2 
+          ? bookmarkManager.isDuplicate(product, keyword)
+          : bookmarkManager.isDuplicate(product);
+        
+        const bookmark = bookmarkManager.findBookmark && bookmarkManager.findBookmark.length === 2
+          ? bookmarkManager.findBookmark(product.id, keyword)
+          : bookmarkManager.findBookmark(product.id);
+        
+        const bookmarkedAt = bookmark ? bookmark.addedAt : '';
+        
+        const data = this.prepareProductData(product, isDuplicate, bookmarkedAt);
+        
+        // Them thong tin tu khoa
+        data.search_keyword = keyword || '';
+        data.keyword_match_type = this.getKeywordMatchType(product, keyword);
+
+        return data;
+      });
+
+      // Tao writer voi header moi
+      const finalPath = outputFilePath || config.csvOutputFile;
+      const dir = path.dirname(finalPath);
+      fs.ensureDirSync(dir);
+      const writer = createCsvWriter({ path: finalPath, header: keywordHeader });
+      
+      await writer.writeRecords(csvData);
+      console.log(`Da xuat ${csvData.length} san pham ra file CSV voi tu khoa "${keyword}": ${finalPath}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Lỗi khi xuat CSV voi tu khoa:', error.message);
+      return false;
+    }
+  }
+
+  // Xac dinh loai khop tu khoa
+  getKeywordMatchType(product, keyword) {
+    if (!keyword) return '';
+    
+    const keywordLower = keyword.toLowerCase();
+    const name = (product.name || '').toLowerCase();
+    const description = (product.description || '').toLowerCase();
+    const shortDescription = (product.short_description || '').toLowerCase();
+    const categories = Array.isArray(product.categories) 
+      ? product.categories.map(cat => (cat.name || '').toLowerCase()).join(' ')
+      : '';
+    const tags = Array.isArray(product.tags)
+      ? product.tags.map(tag => (tag.name || '').toLowerCase()).join(' ')
+      : '';
+
+    const matchTypes = [];
+    
+    if (name.includes(keywordLower)) matchTypes.push('Ten san pham');
+    if (description.includes(keywordLower)) matchTypes.push('Mo ta');
+    if (shortDescription.includes(keywordLower)) matchTypes.push('Mo ta ngan');
+    if (categories.includes(keywordLower)) matchTypes.push('Danh muc');
+    if (tags.includes(keywordLower)) matchTypes.push('Tags');
+
+    return matchTypes.join(', ');
+  }
 }
 
 module.exports = CsvExporter;
