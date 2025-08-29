@@ -5,8 +5,9 @@ module.exports = {
   // Endpoint API sản phẩm
   productsEndpoint: '/?rest_route=/wc/store/v1/products',
 
-  // Danh sách website (API tương tự, khác baseUrl và thương hiệu)
+  // Danh sach website (API tuơng tự, khac baseUrl và thuơng hieu)
   sites: [
+    { key: 'keeptee', name: 'Keeptee', baseUrl: 'https://keeptee.com', banner: 'KEEPTEE CRAWLER' },
     { key: 'torunstyle', name: 'Torunstyle', baseUrl: 'https://torunstyle.com', banner: 'TORUNSTYLE CRAWLER' },
     { key: 'gotyourstyle', name: 'GotYourStyle', baseUrl: 'https://gotyourstyle.com', banner: 'GOTYOURSTYLE CRAWLER' },
     { key: 'midtintee', name: 'Midtintee', baseUrl: 'https://midtintee.com', banner: 'MIDTINTEE CRAWLER' },
@@ -19,16 +20,16 @@ module.exports = {
     { key: 'merchsport', name: 'MerchSport', baseUrl: 'https://merchsport.net', banner: 'MERCHSPORT CRAWLER' }
   ],
   
-  // Cấu hình mặc định
+  // Cấu hình mac định
   defaultConfig: {
     perPage: 100,
     orderBy: 'date',
     order: 'desc',
-    maxPages: 10, // Số trang tối đa mặc định
-    delay: 1000, // Delay giữa các request (ms)
+    maxPages: 10, // So trang toi đa mac định
+    delay: 1000, // Delay giua cac request (ms)
   },
   
-  // Các trường dữ liệu cần thu thập
+  // Cac truong du lieu cần thu thập
   fields: [
     'id',
     'name', 
@@ -50,18 +51,18 @@ module.exports = {
     'stock_availability'
   ],
   
-  // File lưu trữ link đánh dấu
+  // File luu tru link đanh dấu
   bookmarkFile: './bookmarks.json',
   
   // File CSV output
   csvOutputFile: './products.csv',
   
-  // File lưu trạng thái giữa các lần crawl (triplet 3 link đầu tiên)
+  // File luu trang thai giua cac lần crawl (triplet 3 link đầu tiên)
   stateFile: './crawlState.json',
 
-  // Thư mục gốc lưu dữ liệu theo site
+  // Thu muc goc luu du lieu theo site
   dataDir: './data',
   
-  // Thông báo khi gặp dữ liệu trùng lặp
-  duplicateMessage: 'Phát hiện dữ liệu trùng lặp! Bạn có muốn tiếp tục không?'
+  // Thong bao khi gap du lieu trung lap
+  duplicateMessage: 'Phat hien du lieu trung lap! Ban co muon tiep tuc khong?'
 };

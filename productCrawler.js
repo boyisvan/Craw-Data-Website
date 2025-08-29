@@ -8,12 +8,12 @@ class ProductCrawler {
     this.delay = config.defaultConfig.delay;
   }
 
-  // Cho phép thay đổi baseUrl động theo site được chọn
+  // Cho phép thay doi baseUrl dộng theo site duoc chọn
   setBaseUrl(baseUrl) {
     if (baseUrl) this.baseUrl = baseUrl;
   }
 
-  // Tạo URL API với tham số
+  // Tao URL API voi tham so
   buildApiUrl(page = 1, perPage = 100, orderBy = 'date', order = 'desc') {
     const params = new URLSearchParams({
       per_page: perPage,
@@ -25,16 +25,16 @@ class ProductCrawler {
     return `${this.baseUrl}${this.endpoint}&${params.toString()}`;
   }
 
-  // Delay giữa các request
+  // Delay giua cac request
   async sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  // Thu thập dữ liệu từ một trang
-  async fetchPage(page, perPage, orderBy, order) {
+  // Thu thap du lieu tu một trang
+  async fetchPage(page, perPage, orderBy, order, silent = false) {
     try {
       const url = this.buildApiUrl(page, perPage, orderBy, order);
-      console.log(`📄 Đang thu thập trang ${page}...`);
+      if (!silent) console.log(`Dang thu thap trang ${page}...`);
       
       const response = await axios.get(url, {
         timeout: 30000, // 30 giây timeout
@@ -44,79 +44,81 @@ class ProductCrawler {
       });
 
       if (response.status === 200 && response.data) {
-        console.log(`✅ Trang ${page}: Thu thập thành công ${response.data.length} sản phẩm`);
+        if (!silent) console.log(`Trang ${page}: Thu thap thanh cong ${response.data.length} san pham`);
         return response.data;
       } else {
-        console.log(`⚠️ Trang ${page}: Không có dữ liệu hoặc response không hợp lệ`);
+        if (!silent) console.log(`⚠️ Trang ${page}: Khong có du lieu hoặc response khong hop le`);
         return [];
       }
     } catch (error) {
-      console.error(`❌ Lỗi khi thu thập trang ${page}:`, error.message);
+      if (!silent) console.error(`❌ Loi khi thu thap trang ${page}:`, error.message);
       return [];
     }
   }
 
-  // Thu thập dữ liệu từ nhiều trang
-  async crawlProducts(maxPages = 10, perPage = 100, orderBy = 'date', order = 'desc') {
+  // Thu thap du lieu tu nhiều trang
+  async crawlProducts(maxPages = 10, perPage = 100, orderBy = 'date', order = 'desc', silent = false) {
     const allProducts = [];
     let currentPage = 1;
     let hasMoreData = true;
 
-    console.log(`Bắt đầu thu thập dữ liệu từ ${maxPages} trang...`);
-    console.log(`Cấu hình: ${perPage} sản phẩm/trang, sắp xếp theo ${orderBy} ${order}`);
+    if (!silent) {
+      console.log(`Bat dau thu thap du lieu tu ${maxPages} trang...`);
+      console.log(`Cau hình: ${perPage} san pham/trang, sap xep theo ${orderBy} ${order}`);
+    }
 
     while (currentPage <= maxPages && hasMoreData) {
-      const products = await this.fetchPage(currentPage, perPage, orderBy, order);
+      const products = await this.fetchPage(currentPage, perPage, orderBy, order, silent);
       
       if (products && products.length > 0) {
         allProducts.push(...products);
-        console.log(`📈 Tổng số sản phẩm đã thu thập: ${allProducts.length}`);
+        if (!silent) console.log(`Tong so san pham da thu thap: ${allProducts.length}`);
         
-        // Delay giữa các request để tránh bị block
+        // Delay giua cac request de tranh bị block
         if (currentPage < maxPages) {
-          console.log(`⏳ Đợi ${this.delay}ms trước khi thu thập trang tiếp theo...`);
+          if (!silent) console.log(`⏳ Doi ${this.delay}ms truoc khi thu thap trang tiep theo...`);
           await this.sleep(this.delay);
         }
       } else {
-        console.log(`🏁 Không còn dữ liệu ở trang ${currentPage}, dừng thu thập`);
+        if (!silent) console.log(`🏁 Khong còn du lieu ở trang ${currentPage}, dung thu thap`);
         hasMoreData = false;
       }
       
       currentPage++;
     }
 
-    console.log(`🎉 Hoàn thành! Tổng cộng thu thập được ${allProducts.length} sản phẩm từ ${currentPage - 1} trang`);
+    if (!silent) console.log(`🎉 Hoan thanh! Tong cộng thu thap duoc ${allProducts.length} san pham tu ${currentPage - 1} trang`);
     return allProducts;
   }
 
-  // Thu thập dữ liệu với retry mechanism
-  async crawlProductsWithRetry(maxPages = 10, perPage = 100, orderBy = 'date', order = 'desc', maxRetries = 3) {
+  // Thu thap du lieu voi retry mechanism
+  async crawlProductsWithRetry(maxPages = 10, perPage = 100, orderBy = 'date', order = 'desc', maxRetries = 3, silent = false) {
     let retryCount = 0;
     
     while (retryCount < maxRetries) {
       try {
-        return await this.crawlProducts(maxPages, perPage, orderBy, order);
+        return await this.crawlProducts(maxPages, perPage, orderBy, order, silent);
       } catch (error) {
         retryCount++;
-        console.error(`❌ Lần thử ${retryCount} thất bại:`, error.message);
+        if (!silent) console.error(`❌ Lan thu ${retryCount} that bai:`, error.message);
         
         if (retryCount < maxRetries) {
-          const waitTime = retryCount * 5000; // Tăng thời gian chờ mỗi lần retry
-          console.log(`⏳ Đợi ${waitTime}ms trước khi thử lại...`);
+          const waitTime = retryCount * 5000; // Tang thoi gian cho moi lan retry
+          if (!silent) console.log(`⏳ Doi ${waitTime}ms truoc khi thu lai...`);
           await this.sleep(waitTime);
         } else {
-          console.error(`💥 Đã thử ${maxRetries} lần nhưng không thành công. Dừng thu thập.`);
+          if (!silent) console.error(`💥 Da thu ${maxRetries} lan nhung khong thanh cong. Dung thu thap.`);
           throw error;
         }
       }
     }
   }
 
-  // Kiểm tra kết nối API
-  async testConnection() {
+  // Kiem tra ket noi API
+  async testConnection(silent = false) {
     try {
       const url = this.buildApiUrl(1, 1, 'date', 'desc');
-      console.log('Đang kiểm tra kết nối API...');
+      if (!silent) console.log('Dang kiem tra ket noi API...');
       
       const response = await axios.get(url, {
         timeout: 10000,
@@ -126,19 +128,19 @@ class ProductCrawler {
       });
 
       if (response.status === 200) {
-        console.log('✅ Kết nối API thành công!');
+        if (!silent) console.log('✅ Ket noi API thanh cong!');
         return true;
       } else {
-        console.log('⚠️ Kết nối API không ổn định');
+        if (!silent) console.log('⚠️ Ket noi API khong on dịnh');
         return false;
       }
     } catch (error) {
-      console.error('Không thể kết nối API:', error.message);
+      if (!silent) console.error('Khong the ket noi API:', error.message);
       return false;
     }
   }
 
-  // Lấy thông tin tổng quan về API
+  // Lay thong tin tong quan về API
   async getApiInfo() {
     try {
       const url = this.buildApiUrl(1, 1, 'date', 'desc');
@@ -150,15 +152,15 @@ class ProductCrawler {
       });
 
       if (response.status === 200 && response.data) {
-        const totalProducts = response.data.length > 0 ? 'Có dữ liệu' : 'Không có dữ liệu';
-        console.log(`Thông tin API:`);
+        const totalProducts = response.data.length > 0 ? 'Có du lieu' : 'Khong có du lieu';
+        console.log(`Thong tin API:`);
         console.log(`   - URL: ${url}`);
-        console.log(`   - Trạng thái: ${response.status}`);
-        console.log(`   - Dữ liệu: ${totalProducts}`);
+        console.log(`   - Trang thai: ${response.status}`);
+        console.log(`   - Du lieu: ${totalProducts}`);
         return true;
       }
     } catch (error) {
-      console.error('Không thể lấy thông tin API:', error.message);
+      console.error('Khong the lay thong tin API:', error.message);
       return false;
     }
   }

@@ -17,22 +17,24 @@ class BookmarkManager {
     return path.join(dir, 'bookmarks.json');
   }
 
-  // Đổi site động và tải lại
-  setSite(siteKey) {
+  // Đổi site động và tai lai
+  setSite(siteKey, silent = false) {
     this.siteKey = siteKey || null;
     this.bookmarkFile = this.getFilePath();
-    this.bookmarks = this.loadBookmarks();
+    this.bookmarks = this.loadBookmarks(silent);
   }
 
-  // Tải danh sách bookmark từ file
-  loadBookmarks() {
+  // Tai danh sách bookmark từ file
+  loadBookmarks(silent = false) {
     try {
       if (fs.existsSync(this.bookmarkFile)) {
         const data = fs.readFileSync(this.bookmarkFile, 'utf8');
         return JSON.parse(data);
       }
     } catch (error) {
-      console.log('Không thể tải file bookmark, tạo mới...');
+      if (!silent) {
+        console.log('Khong the tai file bookmark, tao moi...');
+      }
     }
     return [];
   }
@@ -42,11 +44,11 @@ class BookmarkManager {
     try {
       fs.writeFileSync(this.bookmarkFile, JSON.stringify(this.bookmarks, null, 2));
     } catch (error) {
-      console.error('Lỗi khi lưu bookmark:', error.message);
+      console.error('Loi khi lưu bookmark:', error.message);
     }
   }
 
-  // Thêm bookmark mới
+  // Thêm bookmark moi
   addBookmark(product) {
     const bookmark = {
       id: product.id,
@@ -57,16 +59,13 @@ class BookmarkManager {
       isDuplicate: false
     };
     
-    // Chỉ giữ 5 link mới nhất: thêm vào cuối và cắt bớt đầu nếu vượt quá 5
-    // Thêm vào đầu danh sách để ưu tiên mới nhất đứng trước
-    this.bookmarks.unshift(bookmark);
-    // Chỉ giữ 5 phần tử đầu tiên
-    if (this.bookmarks.length > 5) this.bookmarks.length = 5;
+    // Thêm vào danh sách bookmark
+    this.bookmarks.push(bookmark);
     this.saveBookmarks();
     return bookmark;
   }
 
-  // Kiểm tra xem sản phẩm có phải là duplicate không
+  // Kiem tra xem san phẩm có phai là duplicate khong
   isDuplicate(product) {
     return this.bookmarks.some(bookmark => 
       bookmark.id === product.id || 
@@ -75,7 +74,7 @@ class BookmarkManager {
     );
   }
 
-  // Đánh dấu sản phẩm là duplicate
+  // Đánh dấu san phẩm là duplicate
   markAsDuplicate(product) {
     const bookmark = this.bookmarks.find(b => 
       b.id === product.id || 
@@ -101,7 +100,7 @@ class BookmarkManager {
     this.saveBookmarks();
   }
 
-  // Xóa tất cả bookmark
+  // Xóa tất ca bookmark
   clearBookmarks() {
     this.bookmarks = [];
     this.saveBookmarks();
@@ -112,7 +111,7 @@ class BookmarkManager {
     return this.bookmarks.find(b => b.id === productId);
   }
 
-  // Kiểm tra xem có bookmark nào không
+  // Kiem tra xem có bookmark nào khong
   hasBookmarks() {
     return this.bookmarks.length > 0;
   }
